@@ -1,0 +1,10 @@
+Faker
+requests
+pandas
+streamlit
+SQLAlchemy
+psycopg2-binary
+PyMySQL
+opencv-python
+streamlit-webrtc
+cryptography==42.0.8
