@@ -6,21 +6,25 @@ import seaborn as sns
 import os
 
 st.set_page_config(page_title="Academic Success Visualization", layout="wide")
-st.title("🎓 Academic Success Dataset Explorer")
+st.title("🎓 Academic Success Dataset Explorer (Cleaned Data Structure)")
 
-CSV_FILE_PATH = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT-cB95XqxQD5oxtx6ri-fT2ZFKLFofNyD3slVgjdxXha2qF3pFl0PhS_q-N5hxAK1KZ-u9afBF8l0F/pub?output=csv'
+CSV_FILE_PATH = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vStNgdBA_efS0GWpOupXK2q7vsN7nhLuohfZbMqnjRppAKfnBtpjcgUTM1dwJ1nOQ/pub?output=csv'
 
 @st.cache_data(ttl=600)
 def load_data(file_path_or_url):
     """Loads data from the given file path or URL."""
     try:
         df = pd.read_csv(file_path_or_url)
-        if df.columns[-1].startswith('Unnamed:'):
-            df = df.iloc[:, :-1]
+        # Handle potential empty first row if CSV was exported from Excel with a title row
+        if df.iloc[0].isnull().all():
+            df = pd.read_csv(file_path_or_url, skiprows=1)
+        if df.columns[0].lower() == 'respondent' and 'respondent' not in df.iloc[0].str.lower().values:
+             pass
+        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
         return df
     except Exception as e:
         st.error(f"Error loading data from {file_path_or_url}: {e}")
-        st.error("Please ensure the URL is correct, published to the web as CSV, and accessible, or the local file path is correct.")
+        st.error("Please ensure the URL is correct, published to the web as CSV, and accessible, ")
         return pd.DataFrame()
 
 df_original = load_data(CSV_FILE_PATH)
@@ -39,210 +43,170 @@ if st.sidebar.checkbox("Show Raw Data Sample", False):
 st.sidebar.markdown("---")
 st.sidebar.header("📊 Visualization Selection")
 
-cols_to_make_numeric = ['Age', 'Gender', 'Course', 'Ylevel', 'Muni', 'FamOcc', 'FamIn', 'AccER', 'ParEn', 'ExpEA', 'PrivT',
-                        'Books', 'ExtAc', 'Techn', 'PLCon', 'FinSt', 'Nabst', 'Ab1wk', 'Ab3wk',
-                        'Sport', 'Music', 'Dance', 'Clubs', 'Motiv', 'SelfE', 'EmWlB', 'Stress',
-                        'Anxiet', 'Deprsn', 'TestS', 'Actvt', 'Prtcpt', 'OralR', 'Redng', 'TakNo', 'JGrSt', 'Success']
+new_column_names = [
+    'SocioeconomicStatus', 'Attendance', 'ExtracurricularActivities',
+    'PsychologicalFactors', 'AcademicPerformanceData', 'StudyHabits', 'Academic Success'
+]
+cols_to_make_numeric = new_column_names
 
 for col in cols_to_make_numeric:
     if col in df.columns:
         df[col] = pd.to_numeric(df[col], errors='coerce')
-    else:
-        st.sidebar.warning(f"Column '{col}' intended for numeric conversion was not found in the dataset from the source.")
-
 
 graph_options = [
-    "1. Histogram: Distribution of Motivation Scores",
-    "2. Bar Chart: Average Motivation Score by Gender",
-    "3. Scatter Plot: Technology Access vs. Motivation Score",
-    "4. Box Plot: Motivation Score Distribution by Extracurricular Activities",
-    "5. Pie Chart: Proportion of Student Success",
-    "6. Heatmap: Correlation Between Numerical Features"
+    "1. Histogram: Distribution of Academic Performance",
+    "2. Bar Chart: Average Academic Performance by Success Level",
+    "3. Scatter Plot: Study Habits vs. Academic Performance",
+    "4. Box Plot: Academic Performance by Extracurricular Activities Score",
+    "5. Pie Chart: Proportion of Student Academic Success Levels",
+    "6. Heatmap: Correlation Between Key Factors"
 ]
 selected_graph = st.sidebar.selectbox("Choose a graph to display:", graph_options)
 
 st.sidebar.markdown("---")
 st.sidebar.header("⚙️ Graph Specific Options")
 
-
 st.header("🔍 Exploratory Data Visualizations")
 st.markdown(f"#### Displaying: {selected_graph}")
 
+# Define expected column name variables for clarity in plotting functions
+col_ses = 'SocioeconomicStatus'
+col_attendance = 'Attendance'
+col_extracurricular = 'ExtracurricularActivities'
+col_psychological = 'PsychologicalFactors'
+col_performance = 'AcademicPerformanceData'
+col_study_habits = 'StudyHabits'
+col_academic_success = 'Academic Success' # Note the space
+heatmap_default_cols = new_column_names # All new columns are potential candidates for heatmap
+
 if selected_graph == graph_options[0]:
-    score_col_hist = 'Motiv'
-    if score_col_hist in df.columns:
-        df_cleaned_hist = df.dropna(subset=[score_col_hist])
-        if not df_cleaned_hist.empty and pd.api.types.is_numeric_dtype(df_cleaned_hist[score_col_hist]):
+    # Histogram of AcademicPerformanceData
+    target_col = col_performance
+    if target_col in df.columns:
+        df_cleaned = df.dropna(subset=[target_col])
+        if not df_cleaned.empty and pd.api.types.is_numeric_dtype(df_cleaned[target_col]):
             min_bins = 2
-            max_bins = max(min_bins, int(df_cleaned_hist[score_col_hist].nunique()))
+            max_bins = max(min_bins, int(df_cleaned[target_col].nunique()))
             default_bins = min(10, max_bins) if max_bins > min_bins else max_bins
-
-            selected_bins_score = st.sidebar.slider(
-                f"Select number of bins for '{score_col_hist}' Histogram:",
-                min_value=min_bins,
-                max_value=max_bins,
-                value=default_bins,
-                key="hist_bins_motiv_selected",
-                step=1 if max_bins > min_bins else 0
+            selected_bins = st.sidebar.slider(
+                f"Bins for '{target_col}' Histogram:", min_bins, max_bins, default_bins,
+                key="hist_bins_perf_selected", step=1 if max_bins > min_bins else 0
             ) if max_bins > min_bins else default_bins
-
-            fig_score_hist = px.histogram(df_cleaned_hist, x=score_col_hist, nbins=selected_bins_score,
-                                          title=f"Distribution of {score_col_hist}",
-                                          labels={score_col_hist: "Motivation Score"})
-            fig_score_hist.update_layout(bargap=0.1)
-            st.plotly_chart(fig_score_hist, use_container_width=True)
-            st.caption("Shows the distribution of student motivation scores.")
-        elif not df_cleaned_hist.empty:
-            st.warning(f"Column '{score_col_hist}' is not numeric and cannot be used for a histogram.")
-        else:
-            st.warning(f"No valid data found in column '{score_col_hist}' for histogram after dropping NaNs.")
-    else:
-        st.warning(f"Column '{score_col_hist}' not found in the dataset for 'Motivation Scores' histogram.")
+            fig = px.histogram(df_cleaned, x=target_col, nbins=selected_bins, title=f"Distribution of {target_col}")
+            st.plotly_chart(fig, use_container_width=True)
+            st.caption(f"Shows the distribution of {target_col.lower()} scores.")
+        else: st.warning(f"Column '{target_col}' is not numeric or has no valid data.")
+    else: st.warning(f"Column '{target_col}' not found.")
 
 elif selected_graph == graph_options[1]:
-    cat_col_bar = 'Gender'
-    score_col_bar_avg = 'Motiv'
-
-    if cat_col_bar in df.columns and score_col_bar_avg in df.columns:
-        if not pd.api.types.is_numeric_dtype(df[score_col_bar_avg]):
-            st.warning(f"Score column '{score_col_bar_avg}' for bar chart is not numeric. Cannot calculate average.")
+    # Bar Chart: Average AcademicPerformanceData by Academic Success level
+    cat_col, score_col = col_academic_success, col_performance
+    if cat_col in df.columns and score_col in df.columns:
+        if not pd.api.types.is_numeric_dtype(df[score_col]):
+            st.warning(f"Score column '{score_col}' is not numeric.")
         else:
-            df_cleaned_bar = df.dropna(subset=[score_col_bar_avg, cat_col_bar])
-            df_cleaned_bar[cat_col_bar] = df_cleaned_bar[cat_col_bar].astype(str)
-
-            if not df_cleaned_bar.empty:
-                avg_score_by_cat = df_cleaned_bar.groupby(cat_col_bar)[score_col_bar_avg].mean().reset_index()
-                avg_score_by_cat = avg_score_by_cat.sort_values(by=score_col_bar_avg, ascending=False)
-
-                fig_avg_score_bar = px.bar(avg_score_by_cat, x=cat_col_bar, y=score_col_bar_avg,
-                                           title=f"Average {score_col_bar_avg} by {cat_col_bar}",
-                                           labels={cat_col_bar: "Gender (Encoded)", score_col_bar_avg: f"Average {score_col_bar_avg}"},
-                                           color=cat_col_bar)
-                st.plotly_chart(fig_avg_score_bar, use_container_width=True)
-                st.caption(f"Compares the average motivation score across different genders (numeric codes shown).")
-            else:
-                st.warning(f"Not enough valid data in '{cat_col_bar}' or '{score_col_bar_avg}' for the bar chart after cleaning.")
-    else:
-        st.warning(f"One or both columns ('{cat_col_bar}', '{score_col_bar_avg}') not found for the bar chart.")
+            df_cleaned = df.dropna(subset=[score_col, cat_col]).copy() # Use .copy() to avoid SettingWithCopyWarning
+            df_cleaned.loc[:, cat_col] = df_cleaned[cat_col].astype(str) # Treat success level as category
+            if not df_cleaned.empty:
+                avg_score_by_cat = df_cleaned.groupby(cat_col)[score_col].mean().reset_index().sort_values(by=score_col, ascending=False)
+                fig = px.bar(avg_score_by_cat, x=cat_col, y=score_col, color=cat_col, title=f"Average {score_col} by {cat_col}")
+                st.plotly_chart(fig, use_container_width=True)
+                st.caption(f"Compares average {score_col.lower()} across different '{cat_col.lower()}' levels.")
+            else: st.warning(f"No data for bar chart after cleaning for columns '{cat_col}' and '{score_col}'.")
+    else: st.warning(f"One or both columns ('{cat_col}', '{score_col}') not found.")
 
 elif selected_graph == graph_options[2]:
-    x_col_scatter = 'Techn'
-    y_col_scatter = 'Motiv'
+    # Scatter Plot: StudyHabits vs. AcademicPerformanceData
+    x_col, y_col = col_study_habits, col_performance
+    scatter_color_options = [None, col_psychological, col_ses, col_extracurricular, col_attendance, col_academic_success]
+    valid_scatter_color_options = [opt for opt in scatter_color_options if opt is None or opt in df.columns]
+    default_color_index = valid_scatter_color_options.index(col_psychological) if col_psychological in valid_scatter_color_options else 0
 
-    scatter_color_options = [None] + [col for col in df.columns if df[col].nunique() < 15 and col not in [x_col_scatter, y_col_scatter]]
-    color_col_scatter = st.sidebar.selectbox("Color scatter plot by (optional):", options=scatter_color_options, index=scatter_color_options.index('Gender') if 'Gender' in scatter_color_options else 0, key="scatter_color")
-
-
-    if x_col_scatter in df.columns and y_col_scatter in df.columns:
-        if not pd.api.types.is_numeric_dtype(df[x_col_scatter]) or not pd.api.types.is_numeric_dtype(df[y_col_scatter]):
-            st.warning(f"One or both columns for scatter plot ('{x_col_scatter}', '{y_col_scatter}') are not numeric.")
-        else:
-            df_cleaned_scatter = df.dropna(subset=[x_col_scatter, y_col_scatter])
-            if color_col_scatter and color_col_scatter in df.columns:
-                df_cleaned_scatter = df_cleaned_scatter.dropna(subset=[color_col_scatter])
-                df_cleaned_scatter[color_col_scatter] = df_cleaned_scatter[color_col_scatter].astype(str)
-
-            if not df_cleaned_scatter.empty:
-                hover_cols = ['Course', 'Ylevel']
-                if 'Success' in df_cleaned_scatter.columns:
-                    hover_cols.append('Success')
-
-                fig_study_score_scatter = px.scatter(df_cleaned_scatter, x=x_col_scatter, y=y_col_scatter,
-                                                     color=color_col_scatter if color_col_scatter in df_cleaned_scatter.columns else None,
-                                                     title=f"{x_col_scatter} vs. {y_col_scatter}",
-                                                     labels={x_col_scatter: "Technology Access Score", y_col_scatter: "Motivation Score", color_col_scatter: f"{color_col_scatter} (Encoded)" if color_col_scatter else "Color"},
-                                                     hover_data=hover_cols)
-                fig_study_score_scatter.update_traces(marker=dict(size=8, opacity=0.7))
-                st.plotly_chart(fig_study_score_scatter, use_container_width=True)
-                st.caption(f"Shows the relationship between technology access score and motivation score. Each point is a student.")
-            else:
-                st.warning(f"Not enough valid data in '{x_col_scatter}' or '{y_col_scatter}' for the scatter plot after cleaning.")
-    else:
-        st.warning(f"One or both columns ('{x_col_scatter}', '{y_col_scatter}') not found for the scatter plot.")
-
-elif selected_graph == graph_options[3]:
-    score_col_box = 'Motiv'
-    cat_col_box = 'ExtAc'
-
-    if score_col_box in df.columns and cat_col_box in df.columns:
-        if not pd.api.types.is_numeric_dtype(df[score_col_box]):
-             st.warning(f"Score column '{score_col_box}' for box plot is not numeric.")
-        else:
-            df_cleaned_box = df.dropna(subset=[score_col_box, cat_col_box])
-            df_cleaned_box[cat_col_box] = df_cleaned_box[cat_col_box].astype(str)
-
-            if not df_cleaned_box.empty:
-                fig_score_cat_box = px.box(df_cleaned_box, x=cat_col_box, y=score_col_box,
-                                           color=cat_col_box,
-                                           title=f"{score_col_box} Distribution by {cat_col_box}",
-                                           labels={cat_col_box: "Extracurricular Activities (Encoded)", score_col_box: "Motivation Score"})
-                st.plotly_chart(fig_score_cat_box, use_container_width=True)
-                st.caption(f"Displays the distribution of motivation scores for different levels/types of extracurricular activity participation (numeric codes shown).")
-            else:
-                st.warning(f"Not enough valid data in '{score_col_box}' or '{cat_col_box}' for the box plot after cleaning.")
-    else:
-        st.warning(f"One or both columns ('{score_col_box}', '{cat_col_box}') not found for the box plot.")
-
-elif selected_graph == graph_options[4]:
-    outcome_col_pie = 'Success'
-
-    if outcome_col_pie in df.columns:
-        df_cleaned_pie = df.dropna(subset=[outcome_col_pie])
-        df_cleaned_pie[outcome_col_pie] = df_cleaned_pie[outcome_col_pie].astype(str)
-
-        if not df_cleaned_pie.empty:
-            outcome_counts = df_cleaned_pie[outcome_col_pie].value_counts().reset_index()
-            outcome_counts.columns = [outcome_col_pie, 'Count']
-
-            fig_pie_outcome = px.pie(outcome_counts, names=outcome_col_pie, values='Count',
-                                     title=f"Proportion of Student {outcome_col_pie}",
-                                     color=outcome_col_pie)
-            fig_pie_outcome.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig_pie_outcome, use_container_width=True)
-            st.caption(f"Visualizes the proportion of students based on the '{outcome_col_pie}' column (numeric codes shown as categories).")
-        else:
-            st.warning(f"Not enough valid data in '{outcome_col_pie}' for the pie chart after cleaning.")
-    else:
-        st.warning(f"Column '{outcome_col_pie}' not found for the pie chart. Ensure your data source has a 'Success' column.")
-
-elif selected_graph == graph_options[5]:
-    default_heatmap_cols = ['Motiv', 'SelfE', 'Stress', 'Anxiet', 'Deprsn', 'TestS', 'PLCon', 'FinSt', 'Techn', 'Books']
-    if 'Success' in df.columns and pd.api.types.is_numeric_dtype(df['Success']):
-        default_heatmap_cols.append('Success')
-
-    initial_heatmap_cols = [col for col in default_heatmap_cols if col in df.columns and pd.api.types.is_numeric_dtype(df[col])]
-
-    st.sidebar.markdown("**Heatmap Column Selection:**")
-    available_numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
-    numerical_cols_for_heatmap = st.sidebar.multiselect(
-        "Select numerical columns for correlation heatmap:",
-        options=available_numeric_cols,
-        default=[col for col in initial_heatmap_cols if col in available_numeric_cols],
-        key="heatmap_cols_selected"
+    color_col_selected = st.sidebar.selectbox(
+        "Color scatter plot by (optional):",
+        options=valid_scatter_color_options,
+        index=default_color_index,
+        key="scatter_color_new"
     )
 
-    if numerical_cols_for_heatmap and all(col in df.columns for col in numerical_cols_for_heatmap):
-        df_heatmap_data = df[numerical_cols_for_heatmap].copy()
-        df_heatmap_data.dropna(inplace=True)
+    if x_col in df.columns and y_col in df.columns:
+        if not pd.api.types.is_numeric_dtype(df[x_col]) or not pd.api.types.is_numeric_dtype(df[y_col]):
+            st.warning(f"Columns for scatter plot ('{x_col}', '{y_col}') must be numeric.")
+        else:
+            df_cleaned = df.dropna(subset=[x_col, y_col]).copy()
+            if color_col_selected and color_col_selected in df.columns:
+                df_cleaned = df_cleaned.dropna(subset=[color_col_selected]).copy()
+            if not df_cleaned.empty:
+                hover_data_cols = [col for col in [col_ses, col_attendance, col_academic_success] if col in df_cleaned.columns]
+                fig = px.scatter(df_cleaned, x=x_col, y=y_col, color=color_col_selected,
+                                 title=f"{x_col} vs. {y_col}" + (f" (Colored by {color_col_selected})" if color_col_selected else ""),
+                                 hover_data=hover_data_cols)
+                st.plotly_chart(fig, use_container_width=True)
+                st.caption(f"Relationship between {x_col.lower()} and {y_col.lower()}.")
+            else: st.warning(f"No data for scatter plot after cleaning for columns '{x_col}', '{y_col}'.")
+    else: st.warning(f"One or both columns ('{x_col}', '{y_col}') not found.")
 
-        if not df_heatmap_data.empty and df_heatmap_data.shape[1] >= 2:
-            correlation_matrix = df_heatmap_data.corr()
-            fig_heatmap, ax_heatmap = plt.subplots(figsize=(max(10, len(numerical_cols_for_heatmap)), max(8, len(numerical_cols_for_heatmap) * 0.8)))
+elif selected_graph == graph_options[3]:
+    # Box Plot: AcademicPerformanceData by ExtracurricularActivities score
+    score_col, cat_col = col_performance, col_extracurricular
+    if score_col in df.columns and cat_col in df.columns:
+        if not pd.api.types.is_numeric_dtype(df[score_col]):
+            st.warning(f"Score column '{score_col}' is not numeric.")
+        else:
+            df_cleaned = df.dropna(subset=[score_col, cat_col]).copy()
+            df_cleaned.loc[:, cat_col] = df_cleaned[cat_col].astype(str) # Treat extracurricular score as category
+            if not df_cleaned.empty:
+                fig = px.box(df_cleaned, x=cat_col, y=score_col, color=cat_col,
+                             title=f"{score_col} Distribution by {cat_col} Score")
+                st.plotly_chart(fig, use_container_width=True)
+                st.caption(f"Shows distribution of {score_col.lower()} by {cat_col.lower()} score (treated as categories).")
+            else: st.warning(f"No data for box plot after cleaning for columns '{score_col}', '{cat_col}'.")
+    else: st.warning(f"One or both columns ('{score_col}', '{cat_col}') not found.")
+
+elif selected_graph == graph_options[4]:
+    # Pie Chart: Proportion of Student Academic Success Levels
+    target_col = col_academic_success
+    if target_col in df.columns:
+        df_cleaned = df.dropna(subset=[target_col]).copy()
+        df_cleaned.loc[:, target_col] = df_cleaned[target_col].astype(str) # Treat as category
+        if not df_cleaned.empty:
+            counts = df_cleaned[target_col].value_counts().reset_index()
+            counts.columns = [target_col, 'Count']
+            fig = px.pie(counts, names=target_col, values='Count', title=f"Proportion of Student {target_col} Levels")
+            st.plotly_chart(fig, use_container_width=True)
+            st.caption(f"Visualizes the proportion of students across different '{target_col.lower()}' levels.")
+        else: st.warning(f"No data for pie chart after cleaning for column '{target_col}'.")
+    else: st.warning(f"Column '{target_col}' not found.")
+
+elif selected_graph == graph_options[5]:
+    # Heatmap: Correlation Between Key Factors
+    st.sidebar.markdown("**Heatmap Column Selection:**")
+    available_numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+    actual_default_heatmap_cols = [col for col in heatmap_default_cols if col in available_numeric_cols]
+
+    selected_cols_for_heatmap = st.sidebar.multiselect(
+        "Select numerical columns for correlation heatmap:",
+        options=available_numeric_cols,
+        default=actual_default_heatmap_cols,
+        key="heatmap_cols_selected_new"
+    )
+    if selected_cols_for_heatmap and len(selected_cols_for_heatmap) >=2:
+        df_heatmap = df[selected_cols_for_heatmap].copy().dropna()
+        if not df_heatmap.empty and df_heatmap.shape[0] > 1:
+            correlation_matrix = df_heatmap.corr()
+            fig_heatmap, ax_heatmap = plt.subplots(figsize=(max(8, len(selected_cols_for_heatmap)*0.8), max(6, len(selected_cols_for_heatmap)*0.6)))
             sns.heatmap(correlation_matrix, annot=True, cmap="coolwarm", fmt=".2f", linewidths=.5, ax=ax_heatmap, annot_kws={"size":8})
-            ax_heatmap.set_title("Correlation Matrix of Selected Numerical Features", fontsize=16)
-            plt.xticks(rotation=45, ha='right')
-            plt.yticks(rotation=0)
+            plt.title("Correlation Matrix of Selected Factors", fontsize=14)
+            plt.xticks(rotation=45, ha='right', fontsize=10)
+            plt.yticks(rotation=0, fontsize=10)
             plt.tight_layout()
             st.pyplot(fig_heatmap)
-            st.caption("Shows Pearson correlation coefficients. Values close to 1 or -1 indicate a strong positive or negative linear relationship, respectively.")
-        elif df_heatmap_data.shape[1] < 2:
-            st.warning("Please select at least two valid numerical columns for the correlation heatmap.")
-        else:
-            st.warning("Not enough valid numerical data in the selected columns for the heatmap after cleaning and dropping NaNs.")
-    elif not numerical_cols_for_heatmap:
-        st.info("Select at least two numerical columns from the sidebar to generate a correlation heatmap.")
+            st.caption("Pearson correlation coefficients between selected factors.")
+        else: st.warning("Not enough valid data rows for heatmap after cleaning, or too few columns selected.")
+    elif selected_cols_for_heatmap and len(selected_cols_for_heatmap) < 2:
+        st.info("Select at least two numerical columns for the correlation heatmap.")
     else:
-        st.warning("One or more selected columns for the heatmap are not found or are not suitable. Please check your selection.")
+        st.info("Select numerical columns from the sidebar for the heatmap.")
 
 st.markdown("---")
 if CSV_FILE_PATH.startswith('http'):
